@@ -26,7 +26,7 @@ MODEL="${MODEL:-meta-llama/Meta-Llama-3-8B-Instruct}"
 BACKEND="${BACKEND:-hf}"
 BATCH_SIZE="${BATCH_SIZE:-auto}"
 OUT_DIR="${OUT_DIR:-results}"
-# Prefer the local venv (./setup.sh); fall back to whatever is on PATH.
+# Prefer the local venv (see README); fall back to whatever is on PATH.
 if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
 
 if [ -z "${DEVICE:-}" ]; then
