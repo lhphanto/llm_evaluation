@@ -113,7 +113,7 @@ Environment overrides:
 | `MODEL` | `meta-llama/Meta-Llama-3-8B-Instruct` | any HF model id or local path |
 | `BACKEND` | `hf` | `hf` or `vllm` |
 | `DEVICE` | auto (`cuda:0` → `mps` → `cpu`) | |
-| `BATCH_SIZE` | `auto` | lower it (e.g. `8`) if you hit OOM |
+| `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | lower it (e.g. `8`) if you hit OOM |
 | `OUT_DIR` | `results` | results go to `$OUT_DIR/<mode>/<model>/results_<timestamp>.json` |
 | `TASKS` | `mmlu_llama` / `mmlu` | override, e.g. a single subject such as `mmlu_llama_anatomy` |
 

@@ -46,20 +46,21 @@ def main(path):
         sys.exit("No per-subject results found")
     metric_key, _ = main_metric(next(iter(subjects.values())))
 
-    root = next(g for g in groups if not any(g in subs for subs in groups.values()))
+    root = next((g for g in groups if not any(g in subs for subs in groups.values())), None)
+    n = {t: n_samples.get(t, {}).get("effective", 1) for t in subjects}
+    n_docs = sum(n.values())
     macro = 100 * sum(main_metric(r)[1] for r in subjects.values()) / len(subjects)
-    micro = 100 * main_metric(results[root])[1]
-    n_docs = sum(n_samples.get(t, {}).get("effective", 0) for t in subjects)
+    micro = 100 * sum(main_metric(r)[1] * n[t] for t, r in subjects.items()) / n_docs
 
     cfg = data.get("config", {})
     print(f"\nResults file : {fname}")
     print(f"Model        : {cfg.get('model_args')}")
-    print(f"Task / metric: {root} / {metric_key}")
+    print(f"Task / metric: {root or ', '.join(subjects)} / {metric_key}")
     print(f"Chat template: {data.get('chat_template') is not None}, "
           f"fewshot_as_multiturn: {data.get('fewshot_as_multiturn')}")
     print(f"Subjects     : {len(subjects)}   questions evaluated: {n_docs}")
-    if n_docs and n_docs < 14042:
-        print("  NOTE: partial run (--limit), numbers are NOT comparable to the model card.")
+    if n_docs < 14042:
+        print("  NOTE: partial run (subset of subjects or --limit), NOT comparable to the model card.")
 
     print("\nCategory (micro)")
     for cat in CATEGORIES:

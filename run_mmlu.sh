@@ -24,7 +24,6 @@ cd "$(dirname "$0")"
 MODE="${1:-llama}"; shift || true
 MODEL="${MODEL:-meta-llama/Meta-Llama-3-8B-Instruct}"
 BACKEND="${BACKEND:-hf}"
-BATCH_SIZE="${BATCH_SIZE:-auto}"
 OUT_DIR="${OUT_DIR:-results}"
 # Prefer the local venv (see README); fall back to whatever is on PATH.
 if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
@@ -32,6 +31,8 @@ if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
 if [ -z "${DEVICE:-}" ]; then
   DEVICE=$("$PY" -c "import torch; print('cuda:0' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')")
 fi
+# `auto` batch-size probing can loop on Metal OOM errors, so use a fixed size on Apple GPUs.
+if [ "$DEVICE" = "mps" ]; then BATCH_SIZE="${BATCH_SIZE:-8}"; else BATCH_SIZE="${BATCH_SIZE:-auto}"; fi
 
 case "$MODE" in
   llama)
