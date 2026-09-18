@@ -60,6 +60,9 @@ BATCH_SIZE=auto:4 ./run_mmlu.sh standard
 
 # Another model, e.g. the 1.58-bit BitNet fine-tune (HF backend only, see README)
 MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens ./run_mmlu.sh llama
+
+# On Velda: submit any of the above as a batch job on an H100 (see README)
+LAUNCHER="vbatch -P h100-1s" BACKEND=vllm ./run_mmlu.sh llama
 ```
 
 Results go to `results/<mode>/<model>/results_<timestamp>.json`, plus per-question

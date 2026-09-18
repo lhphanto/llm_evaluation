@@ -12,12 +12,14 @@
 # Env overrides:
 #   MODEL=meta-llama/Meta-Llama-3-8B-Instruct  BACKEND=hf|vllm  DEVICE=cuda:0
 #   BATCH_SIZE=auto  OUT_DIR=results  TASKS=<override task list>
+#   PYTHON=<interpreter>  LAUNCHER=<job submit prefix, e.g. "vbatch -P h100-1s">
 #
 # Examples:
 #   ./run_mmlu.sh llama
 #   BACKEND=vllm ./run_mmlu.sh llama
 #   ./run_mmlu.sh standard
 #   ./run_mmlu.sh llama --limit 5        # quick smoke test (5 docs per subject)
+#   LAUNCHER="vbatch -P h100-1s" ./run_mmlu.sh llama   # submit as a Velda batch job
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -25,8 +27,27 @@ MODE="${1:-llama}"; shift || true
 MODEL="${MODEL:-meta-llama/Meta-Llama-3-8B-Instruct}"
 BACKEND="${BACKEND:-hf}"
 OUT_DIR="${OUT_DIR:-results}"
-# Prefer the local venv (see README); fall back to whatever is on PATH.
-if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
+# Python to use: $PYTHON if set, else the activated venv/conda env (not conda `base`),
+# else ./.venv, else python3 on PATH.
+if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"
+elif [ -n "${VIRTUAL_ENV:-}" ] || { [ -n "${CONDA_DEFAULT_ENV:-}" ] && [ "$CONDA_DEFAULT_ENV" != base ]; }; then PY=python
+elif [ -x .venv/bin/python ]; then PY=.venv/bin/python
+else PY=python3; fi
+"$PY" -c "import lm_eval" 2>/dev/null || { echo "lm_eval is not installed for $("$PY" -c 'import sys; print(sys.executable)'); see README setup." >&2; exit 1; }
+
+# Optional job launcher, e.g. LAUNCHER="vbatch -P h100-1s" on Velda. The whole script is
+# re-run inside the job, so device detection, the eval and the summary all happen on the
+# GPU node. Settings are passed explicitly with `env`, since a batch job may not inherit
+# this shell's environment. Assumes the job sees the same filesystem (true on Velda).
+if [ -n "${LAUNCHER:-}" ] && [ -z "${_IN_LAUNCHER:-}" ]; then
+  FWD=(_IN_LAUNCHER=1 "PYTHON=$("$PY" -c 'import sys; print(sys.executable)')"
+       "MODEL=$MODEL" "BACKEND=$BACKEND" "OUT_DIR=$OUT_DIR")
+  for v in DEVICE BATCH_SIZE TASKS HF_HOME; do
+    [ -n "${!v:-}" ] && FWD+=("$v=${!v}")
+  done
+  set -x
+  exec $LAUNCHER env "${FWD[@]}" bash "$PWD/run_mmlu.sh" "$MODE" "$@"
+fi
 
 if [ -z "${DEVICE:-}" ]; then
   DEVICE=$("$PY" -c "import torch; print('cuda:0' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')")

@@ -61,8 +61,15 @@ command, so pip picks `torch`/`transformers` versions that satisfy lm-eval and v
 .venv/bin/python -c "import vllm; print(vllm.__version__)"    # check
 ```
 
-The scripts use `.venv/bin/python` when it exists and fall back to `python3` on
-`PATH`, so a conda env with the same packages also works.
+Any environment name works (the commands above use `.venv`). The scripts pick the Python
+interpreter in this order:
+
+1. `$PYTHON`, if set (e.g. `PYTHON=~/envs/llm_eval/bin/python ./run_mmlu.sh llama`)
+2. the currently activated venv or conda env (conda `base` is ignored)
+3. `./.venv/bin/python`, if it exists
+4. `python3` on `PATH`
+
+They exit early with a clear message if `lm_eval` isn't installed in the chosen interpreter.
 
 ### 3. Hugging Face access
 
@@ -94,11 +101,41 @@ The run scripts take these environment variables:
 | `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | also `auto:N`, or a fixed number if you hit OOM |
 | `OUT_DIR` | `results` | results go to `$OUT_DIR/<mode>/<model>/results_<timestamp>.json` |
 | `TASKS` | per benchmark | override the lm-eval task list, e.g. a single subject |
+| `PYTHON` | see [Python environment](#2-python-environment) | interpreter to use |
+| `LAUNCHER` | none | job-submit prefix, e.g. `vbatch -P h100-1s` (see [Velda](#running-on-velda)) |
 
 Extra arguments are passed through to `lm_eval run`, e.g. `--limit 5` or
 `--max_batch_size 64`. Full runs also save per-question outputs (`--log_samples`),
 which helps debug wrong answers. lm-eval can't log samples together with `--limit`,
 so limited runs skip them.
+
+## Running on Velda
+
+Set `LAUNCHER` to the submit command, and the script submits **itself** as a batch job:
+
+```bash
+source llm_eval/bin/activate          # or set PYTHON=/path/to/llm_eval/bin/python
+LAUNCHER="vbatch -P h100-1s" ./run_mmlu.sh llama
+LAUNCHER="vbatch -P h100-1s" MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens ./run_mmlu.sh llama
+```
+
+It wraps the whole script rather than only the `python -m lm_eval` line, because
+`vbatch` (`velda run --batch`) queues the job and returns immediately:
+
+- GPU detection has to run on the H100 node, not on the machine you submit from.
+- `summarize.py` has to run after the eval finishes, so it runs inside the same job.
+
+Inside the job the script is re-run as
+`env PYTHON=<abs path> MODEL=... BACKEND=... OUT_DIR=... [DEVICE/BATCH_SIZE/TASKS/HF_HOME] bash run_mmlu.sh <mode> <args>`.
+Settings are passed explicitly because a batch job may not inherit your shell's
+environment. The job uses the instance's filesystem, so the venv, the HF cache and
+login token (`~/.cache/huggingface/token`), and `results/` are shared with your
+session. `HF_TOKEN` is deliberately not forwarded, to keep it out of the job's command
+line, so log in with `hf auth login` instead of relying on that variable.
+
+Follow the job with `velda task log <task-id>` / `velda task watch <task-id>`.
+The summary is printed at the end of the job log, and `.venv/bin/python summarize.py results/llama`
+(or with your env's python) re-prints it from your session.
 
 ## BitNet model notes
 
