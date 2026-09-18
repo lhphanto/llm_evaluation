@@ -1,56 +1,39 @@
-# LLM evaluation: Llama-3-8B-Instruct on MMLU (5-shot)
+# LLM evaluation
 
-Goal: reproduce the MMLU number on the
-[Meta-Llama-3-8B-Instruct model card](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)
-with [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) on
-[MMLU](https://huggingface.co/datasets/cais/mmlu).
+Reproducing published benchmark results with
+[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) (lm-eval).
 
-| Model card (Meta internal eval) | MMLU 5-shot |
+## Benchmarks
+
+| Benchmark | Setting | Doc | Script |
+|---|---|---|---|
+| MMLU | 5-shot | [mmlu.md](mmlu.md) | `run_mmlu.sh` |
+| GPQA | 0-shot | planned | |
+
+## Models
+
+| Model | Notes |
 |---|---|
-| Llama 3 8B (base) | 66.6 |
-| **Llama 3 8B Instruct** | **68.4** (macro avg; micro avg = 67.4) |
+| [meta-llama/Meta-Llama-3-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct) | Default. Gated: accept the license first (see below). ~16 GB of bf16 weights. |
+| [HF1BitLLM/Llama3-8B-1.58-100B-tokens](https://huggingface.co/HF1BitLLM/Llama3-8B-1.58-100B-tokens) | BitNet 1.58-bit fine-tune of Llama-3-8B-Instruct (100B FineWeb-edu tokens). ~3.8 GB. See [BitNet notes](#bitnet-model-notes). |
+
+Pick the model with `MODEL=<hf id or local path>`.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `run_mmlu.sh` | Runs lm-eval MMLU 5-shot, in `llama` mode (Meta protocol) or `standard` mode |
-| `summarize.py` | Reads the lm-eval results JSON and prints macro/micro accuracy plus the diff from the model card |
+| `run_mmlu.sh` | MMLU 5-shot runner (see [mmlu.md](mmlu.md)) |
+| `summarize.py` | Reads an MMLU results JSON and prints macro/micro accuracy plus the diff from the model card |
 | `requirements.txt` | Pinned Python dependencies |
-
-## How Meta evaluated it, and why there are two modes
-
-According to Meta's [eval_details.md](https://github.com/meta-llama/llama3/blob/main/eval_details.md),
-the **instruct** models were evaluated differently from the base models:
-
-- the 5 few-shot examples are given as a **user/assistant dialogue** (chat template),
-- the model **generates** the answer letter (no loglikelihood scoring),
-- the reported number is the **macro average** over the 57 subjects.
-
-lm-eval's default `mmlu` task does something else: a plain-text prompt, the model
-picks among A/B/C/D by loglikelihood, and the score is a micro average. So:
-
-| Mode | lm-eval task | Prompting | Scoring | Compare to |
-|---|---|---|---|---|
-| `llama` (default) | `mmlu_llama` | chat template, few-shot as multi-turn | generate letter, exact match | **68.4 macro / 67.4 micro** |
-| `standard` | `mmlu` | plain text, no chat template | loglikelihood over A/B/C/D | community/leaderboard numbers; expect a few points below the card |
-
-`summarize.py` reports both averages. lm-eval's own group score is the **micro**
-average (weighted by the number of questions per subject). The **macro** average
-(unweighted mean of the 57 subjects) is the one that matches the model card.
-
-Datasets: the `standard` task reads `cais/mmlu`. The `mmlu_llama` task reads
-`hails/mmlu_no_train`, which is `cais/mmlu` with the large `auxiliary_train` split
-removed. Test questions and 5-shot `dev` examples are the same in both. Both download
-automatically on first run.
 
 ## Setup (on the evaluation machine)
 
 ### 1. Hardware
 
 - A CUDA GPU with **≥ 24 GB** memory (e.g. RTX 3090/4090, L4, A10G, A100, H100).
-  The bf16 weights alone are ~16 GB.
-- ~20 GB of free disk for the model and datasets in the Hugging Face cache.
+  The bf16 Llama-3-8B weights alone are ~16 GB.
+- ~25 GB of free disk for models and datasets in the Hugging Face cache.
   Set `HF_HOME=/path/with/space` to move the cache.
 - An 8 GB laptop (e.g. an M2 MacBook) can only run the tiny-model smoke test below.
 
@@ -68,16 +51,22 @@ python3 -m venv .venv
 If the default torch wheel doesn't match your CUDA driver, install the matching one
 first from [pytorch.org](https://pytorch.org/get-started/locally/), then run the command above.
 
-Optional, but much faster for the generative `llama` mode:
+**vLLM (optional, recommended on CUDA).** It is much faster for generative tasks, but
+it is not in `requirements.txt` because it only installs on Linux + CUDA. `BACKEND=vllm`
+fails unless it is installed in the same environment. Install both extras in one
+command, so pip picks `torch`/`transformers` versions that satisfy lm-eval and vLLM together:
 
 ```bash
-.venv/bin/pip install "lm_eval[vllm]==0.4.13"
+.venv/bin/pip install "lm_eval[hf,vllm]==0.4.13"
+.venv/bin/python -c "import vllm; print(vllm.__version__)"    # check
 ```
 
-`run_mmlu.sh` uses `.venv/bin/python` when it exists and falls back to `python3` on
+The scripts use `.venv/bin/python` when it exists and fall back to `python3` on
 `PATH`, so a conda env with the same packages also works.
 
-### 3. Hugging Face access (the model is gated)
+### 3. Hugging Face access
+
+Llama 3 is gated:
 
 1. On the [model page](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct),
    accept the Llama 3 license with your HF account.
@@ -93,41 +82,46 @@ Optional, but much faster for the generative `llama` mode:
 .venv/bin/python -c "from huggingface_hub import HfApi; HfApi().model_info('meta-llama/Meta-Llama-3-8B-Instruct'); print('ok')"
 ```
 
-## Running
+## Common options
 
-```bash
-# Main result, Meta protocol (HF transformers backend)
-./run_mmlu.sh llama
-
-# Same with vLLM (recommended if installed)
-BACKEND=vllm ./run_mmlu.sh llama
-
-# Standard lm-eval MMLU (loglikelihood, no chat template)
-./run_mmlu.sh standard
-```
-
-Environment overrides:
+The run scripts take these environment variables:
 
 | Variable | Default | |
 |---|---|---|
 | `MODEL` | `meta-llama/Meta-Llama-3-8B-Instruct` | any HF model id or local path |
 | `BACKEND` | `hf` | `hf` or `vllm` |
 | `DEVICE` | auto (`cuda:0` → `mps` → `cpu`) | |
-| `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | lower it (e.g. `8`) if you hit OOM |
+| `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | also `auto:N`, or a fixed number if you hit OOM |
 | `OUT_DIR` | `results` | results go to `$OUT_DIR/<mode>/<model>/results_<timestamp>.json` |
-| `TASKS` | `mmlu_llama` / `mmlu` | override, e.g. a single subject such as `mmlu_llama_anatomy` |
+| `TASKS` | per benchmark | override the lm-eval task list, e.g. a single subject |
 
-Extra arguments are passed through to `lm_eval run`, e.g. `./run_mmlu.sh llama --limit 5`.
-Full runs also save per-question outputs (`--log_samples`), which helps debug wrong
-answers. lm-eval can't log samples together with `--limit`, so limited runs skip them.
+Extra arguments are passed through to `lm_eval run`, e.g. `--limit 5` or
+`--max_batch_size 64`. Full runs also save per-question outputs (`--log_samples`),
+which helps debug wrong answers. lm-eval can't log samples together with `--limit`,
+so limited runs skip them.
 
-Fixed settings: `--num_fewshot 5`, `dtype=bfloat16`, `--seed 1234`, greedy decoding
-(from the task config), few-shot examples = the first 5 `dev` questions of each subject.
+## BitNet model notes
 
-To re-print the summary of an existing run:
+`HF1BitLLM/Llama3-8B-1.58-100B-tokens` stores ternary weights packed 4 per byte
+(`"quantization_config": {"quant_method": "bitnet"}`).
+
+- **No special transformers build needed.** The model card says to install a
+  transformers pull request from 2024. BitNet support has since been merged, and the
+  pinned `transformers` loads it as is (`BitNetHfQuantizer`, which needs `accelerate`,
+  already installed by lm-eval).
+- **Tokenizer:** the repo includes the Llama 3 tokenizer and chat template, so no
+  separate `tokenizer=` argument is needed, and it isn't gated.
+- **Use `BACKEND=hf`.** vLLM is not expected to load the `bitnet` quantization format.
+- **Use a GPU.** Weights are unpacked on the fly. transformers supports it on CPU
+  but warns that inference is slow there.
+- **Speed:** transformers' BitNet layers unpack to bf16 for the matmul. They save
+  memory but aren't faster than the bf16 Llama; the fast 1-bit kernels live in
+  [microsoft/BitNet](https://github.com/microsoft/BitNet) (bitnet.cpp), which lm-eval
+  doesn't drive.
 
 ```bash
-.venv/bin/python summarize.py results/llama
+MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens ./run_mmlu.sh llama
+MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens BATCH_SIZE=auto:4 ./run_mmlu.sh standard
 ```
 
 ## Smoke test (any machine, a few minutes)
@@ -138,14 +132,3 @@ The scores mean nothing.
 ```bash
 MODEL=HuggingFaceTB/SmolLM2-135M-Instruct OUT_DIR=smoke BATCH_SIZE=8 ./run_mmlu.sh llama --limit 2
 ```
-
-## Notes on matching the card
-
-- Expect the `llama` mode to land close to the card but maybe not exactly on it.
-  Meta used an internal library, and small prompt and tokenization differences can
-  move MMLU by about ±1 point.
-- `exact_match` uses the `strict_match` filter: the model must produce the letter
-  right after `The best answer is`. If the score is unexpectedly low, check the
-  `samples_*.jsonl` files for formatting failures.
-- The chat template comes from the model's tokenizer. The Llama 3 template inserts no
-  system prompt by default; `--system_instruction "..."` adds one.
