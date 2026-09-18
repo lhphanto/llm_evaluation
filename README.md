@@ -97,7 +97,7 @@ The run scripts take these environment variables:
 |---|---|---|
 | `MODEL` | `meta-llama/Meta-Llama-3-8B-Instruct` | any HF model id or local path |
 | `BACKEND` | `hf` | `hf` or `vllm` |
-| `DEVICE` | auto (`cuda:0` → `mps` → `cpu`) | |
+| `DEVICE` | auto (`cuda:0` → `mps` → `cpu`); `cuda:0` when `LAUNCHER` is set | |
 | `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | also `auto:N`, or a fixed number if you hit OOM |
 | `OUT_DIR` | `results` | results go to `$OUT_DIR/<mode>/<model>/results_<timestamp>.json` |
 | `TASKS` | per benchmark | override the lm-eval task list, e.g. a single subject |
@@ -123,10 +123,12 @@ It wraps the whole script rather than only the `python -m lm_eval` line, because
 `vbatch` (`velda run --batch`) queues the job and returns immediately:
 
 - GPU detection has to run on the H100 node, not on the machine you submit from.
+  With a `LAUNCHER`, `DEVICE` defaults to `cuda:0`, so a job that can't see the GPU
+  fails instead of silently running on CPU (set `DEVICE=...` to override).
 - `summarize.py` has to run after the eval finishes, so it runs inside the same job.
 
 Inside the job the script is re-run as
-`env PYTHON=<abs path> MODEL=... BACKEND=... OUT_DIR=... [DEVICE/BATCH_SIZE/TASKS/HF_HOME] bash run_mmlu.sh <mode> <args>`.
+`env PYTHON=<abs path> MODEL=... BACKEND=... OUT_DIR=... DEVICE=cuda:0 [BATCH_SIZE/TASKS/HF_HOME] bash run_mmlu.sh <mode> <args>`.
 Settings are passed explicitly because a batch job may not inherit your shell's
 environment. The job uses the instance's filesystem, so the venv, the HF cache and
 login token (`~/.cache/huggingface/token`), and `results/` are shared with your

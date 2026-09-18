@@ -40,6 +40,9 @@ else PY=python3; fi
 # GPU node. Settings are passed explicitly with `env`, since a batch job may not inherit
 # this shell's environment. Assumes the job sees the same filesystem (true on Velda).
 if [ -n "${LAUNCHER:-}" ] && [ -z "${_IN_LAUNCHER:-}" ]; then
+  # Launchers target GPU pools: pin cuda:0 so a job that can't see CUDA fails loudly
+  # instead of silently falling back to CPU. Override with DEVICE=... if needed.
+  DEVICE="${DEVICE:-cuda:0}"
   FWD=(_IN_LAUNCHER=1 "PYTHON=$("$PY" -c 'import sys; print(sys.executable)')"
        "MODEL=$MODEL" "BACKEND=$BACKEND" "OUT_DIR=$OUT_DIR")
   for v in DEVICE BATCH_SIZE TASKS HF_HOME; do
