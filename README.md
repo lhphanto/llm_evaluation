@@ -29,12 +29,29 @@ analysis, results file paths) is in the linked doc.
 | GPQA | 0-shot | 24.78 | 34.20 | -9.42 | [gpqa.md](gpqa.md) |
 | HumanEval | 0-shot, pass@1 | 0.00 | 62.20 | -62.20 | [humaneval.md](humaneval.md) |
 
+"Card" here is Meta's Llama-3-8B-**Instruct** model card, 5-shot (68.4 for MMLU, etc.)
+— the same reference used throughout this repo. **This checkpoint's own authors
+publish a different MMLU comparison** (0-shot, against **base** — not Instruct —
+Llama models, via LightEval on a nanotron checkpoint): 49.3 → 41.6, an ~8-point gap,
+much smaller than the ~32-40 points we find above. That's not a contradiction — it's a
+different protocol and a different (much lower-scoring-to-begin-with) reference model
+— see [mmlu.md](mmlu.md#a-second-different-reference-the-bitnet-authors-own-numbers)
+for the full table and reconciliation. It doesn't change the GSM8K/MATH/HumanEval
+findings below, which come from inspecting actual generated text, not from picking a
+reference number.
+
 ## Known issues with the 1.58-bit checkpoint
 
 Investigating why the scores above are so far below the card surfaced several
 distinct, confirmed problems, not just "quantization makes it worse" — each is
 detailed with sample generations in its benchmark's doc:
 
+- **Two legitimate but very different MMLU reference points.** See the note above the
+  table: comparing this checkpoint to the Instruct card at 5-shot (what this repo does
+  throughout) gives a ~32-40 point gap; the model's own authors instead compare it to
+  base (non-instruct) Llama models at 0-shot and find only an ~8-point gap (49.3 →
+  41.6). Neither is wrong, but they're not interchangeable, and neither is a perfect
+  fit for a checkpoint fine-tuned from the Instruct weights.
 - **Lost instruction-following, not just lost knowledge.** The base model is
   Llama-3-8B-**Instruct**, but the continued pretraining was on 100B tokens of plain
   FineWeb-edu text (no chat-formatted data). That plausibly eroded chat-template/
@@ -61,10 +78,16 @@ detailed with sample generations in its benchmark's doc:
   full-precision card (34.2%) sit close to the 25% random-guess floor for 4-choice
   questions, so it doesn't show much regardless of quantization. See [gpqa.md](gpqa.md).
 
-Net read: MMLU, GSM8K, and MATH all point to severe capability loss from 1.58-bit
-quantization + only 100B tokens of (non-chat) recovery training, rather than the
-FineWeb-edu domain choice being the main cause — GSM8K in particular only needs simple
-arithmetic, which should be largely domain-agnostic, and still collapses to ~3%.
+Net read: taken against the Instruct 5-shot card, MMLU, GSM8K, and MATH all point to
+severe capability loss from 1.58-bit quantization + only 100B tokens of (non-chat)
+recovery training, rather than the FineWeb-edu domain choice being the main cause —
+GSM8K in particular only needs simple arithmetic, which should be largely
+domain-agnostic, and still collapses to ~3%. Judged instead against the authors' own
+0-shot/base-model comparison, the picture is milder (~8 points on MMLU) — but that
+gentler framing doesn't extend to GSM8K, MATH, or HumanEval, where we didn't just
+compute a lower aggregate score, we found the model failing to produce a usable answer
+at all in the majority of cases (runaway generation, repetition loops, or no attempt),
+confirmed by hand from the raw generations rather than inferred from any score.
 
 ## Models
 

@@ -13,6 +13,33 @@ From the [Meta-Llama-3-8B-Instruct model card](https://huggingface.co/meta-llama
 | Llama 3 8B (base) | 66.6 |
 | **Llama 3 8B Instruct** | **68.4** (macro avg; micro avg = 67.4) |
 
+### A second, different reference: the BitNet authors' own numbers
+
+If you're evaluating `HF1BitLLM/Llama3-8B-1.58-100B-tokens` (or a sibling checkpoint),
+its own model card/[blog post](https://huggingface.co/blog/1_58_llm_extreme_quantization)
+publishes a **different MMLU comparison**, evaluated 0-shot with
+[LightEval](https://github.com/huggingface/lighteval) on a
+[nanotron](https://github.com/huggingface/nanotron)-format checkpoint (HF's internal
+training/eval stack — see [README.md](README.md) for whether you need it, short
+answer: no):
+
+| Model | MMLU (0-shot, LightEval) |
+|---|---|
+| Llama 7B (base) | 35.1 |
+| Llama2 7B (base) | 45.3 |
+| Llama3 8B (base) | 49.3 |
+| **Llama3-8B-1.58-100B-tokens** | **41.6** |
+
+Note every row here is a **base** model (no "-Instruct" anywhere) at **0-shot** — a
+different, harder setting than Meta's 5-shot chat protocol above, and a different
+reference model (base Llama3 8B, 49.3) than the Instruct card (68.4) this doc otherwise
+compares to. The two tables are not measuring the same thing, even though both are
+called "MMLU": this one puts the BitNet checkpoint's gap at a modest ~8 points, ours
+(below) finds a ~32-40 point gap against the Instruct 5-shot card. See the Results
+section below for why that isn't a contradiction, and which comparison is more
+appropriate for this checkpoint (it was fine-tuned from Llama-3-8B-**Instruct**, so
+neither reference is a perfect match).
+
 ## How Meta evaluated it, and why there are two modes
 
 According to Meta's [eval_details.md](https://github.com/meta-llama/llama3/blob/main/eval_details.md),
@@ -137,3 +164,28 @@ less reliably than it picks among A/B/C/D by loglikelihood, so it's worth checki
 Results files:
 - `results/llama/HF1BitLLM__Llama3-8B-1.58-100B-tokens/results_2026-09-18T10-58-16.525698.json`
 - `results/standard/HF1BitLLM__Llama3-8B-1.58-100B-tokens/results_2026-09-18T11-44-42.654947.json`
+
+**Reconciling with the authors' own 41.6 number (see above).** Our -32 to -40 point
+gap looks far more damning than the ~8-point gap (49.3 → 41.6) the model's own authors
+report, but these are different measurements, not a discrepancy in either result:
+
+- Their 41.6 is 0-shot, scored against **base** Llama models via LightEval on a
+  nanotron checkpoint. Ours is 5-shot, scored against the **Instruct** card, via
+  lm-eval on the standard `transformers`-loaded checkpoint (`BitNetHfQuantizer`) —
+  same published weights, different harness and protocol.
+- Their own baseline (base Llama3 8B, 49.3 at 0-shot) is itself far below Meta's
+  official 5-shot numbers (66.6 base / 68.4 Instruct) — so their whole table lives on
+  a lower absolute scale than the one this doc otherwise compares to. "41.6 vs 68.4"
+  is not a fair read of either table; "49.3 → 41.6" (their comparison) and "68.4 →
+  28.75/35.99" (ours) are each internally consistent but answer different questions.
+- Neither reference is a perfect fit for this specific checkpoint: it was fine-tuned
+  from Llama-3-8B-**Instruct**, but the authors' own table compares it only to
+  **base** (non-instruct) Llama models, not to Instruct at a chat/instruct protocol —
+  arguably as much of a mismatch as our choice to compare it to the Instruct card at
+  full 5-shot fidelity.
+- This does **not** retract the concrete, independently-verified problems found by
+  inspecting raw generations elsewhere in this benchmark suite (GSM8K's runaway
+  generation, MATH's repetition collapse, HumanEval's total non-engagement — see
+  [gsm8k.md](gsm8k.md), [math.md](math.md), [humaneval.md](humaneval.md)). Those were
+  confirmed from the actual generated text, independent of which reference number the
+  aggregate score is measured against.
