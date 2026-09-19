@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
-# MMLU 5-shot with lm-evaluation-harness.
+# Llama-3-8B-Instruct card benchmarks with lm-evaluation-harness.
 #
-# Usage: ./run_mmlu.sh [llama|standard] [extra lm_eval args...]
+# Usage: ./run_mmlu.sh [llama|standard|gsm8k|math|gpqa|humaneval] [extra lm_eval args...]
 #
-#   llama     Meta's instruct protocol (what the model card's 68.4 uses):
-#             5-shot as multi-turn user/assistant chat, the model *generates* the
-#             answer letter, exact match. lm-eval task `mmlu_llama`.
-#   standard  Classic lm-eval MMLU: plain-text 5-shot prompt, loglikelihood over
-#             A/B/C/D, no chat template. lm-eval task `mmlu` (Open LLM Leaderboard style).
+#   llama      MMLU, Meta's instruct protocol (what the model card's 68.4 uses):
+#              5-shot as multi-turn user/assistant chat, the model *generates* the
+#              answer letter, exact match. lm-eval task `mmlu_llama`.
+#   standard   MMLU, classic lm-eval: plain-text 5-shot prompt, loglikelihood over
+#              A/B/C/D, no chat template. lm-eval task `mmlu` (Open LLM Leaderboard style).
+#   gsm8k      GSM8K, 8-shot chain-of-thought, Meta's instruct protocol (chat template,
+#              generates a full reasoning trace, exact match on the final number).
+#              lm-eval task `gsm8k_llama`. Card: 79.6.
+#   math       MATH, 4-shot chain-of-thought (Open LLM Leaderboard v2's "hard"/Level-5
+#              subset, `leaderboard_math_hard`, no chat template). Card: 30.0. This is a
+#              1,324-question subset, not the full 5,000-question MATH test set, so
+#              treat it as directionally comparable rather than an exact reproduction.
+#   gpqa       GPQA (main split), 0-shot, multiple choice by loglikelihood, no chat
+#              template. lm-eval task `leaderboard_gpqa_main`. Card: 34.2. Only ~448
+#              questions, so run-to-run noise is a few points.
+#   humaneval  HumanEval, 0-shot code generation, pass@1. lm-eval task
+#              `humaneval_instruct`. Card: 62.2. Runs model-generated code locally to
+#              check it (`--confirm_run_unsafe_code`) — only run this against models
+#              you trust, ideally in a sandbox/VM.
+#
+# Only `gsm8k` has a Meta-branded lm-eval task; math/gpqa/humaneval use the closest
+# standard lm-eval equivalents, so expect more drift from the card than MMLU/GSM8K.
 #
 # Env overrides:
 #   MODEL=meta-llama/Meta-Llama-3-8B-Instruct  BACKEND=hf|vllm  DEVICE=cuda:0
@@ -18,6 +35,10 @@
 #   ./run_mmlu.sh llama
 #   BACKEND=vllm ./run_mmlu.sh llama
 #   ./run_mmlu.sh standard
+#   ./run_mmlu.sh gsm8k
+#   ./run_mmlu.sh math
+#   ./run_mmlu.sh gpqa
+#   ./run_mmlu.sh humaneval
 #   ./run_mmlu.sh llama --limit 5        # quick smoke test (5 docs per subject)
 #   LAUNCHER="vbatch -P h100-1s" ./run_mmlu.sh llama   # submit as a Velda batch job
 set -euo pipefail
@@ -60,14 +81,35 @@ if [ "$DEVICE" = "mps" ]; then BATCH_SIZE="${BATCH_SIZE:-8}"; else BATCH_SIZE="$
 
 case "$MODE" in
   llama)
-    TASKS="${TASKS:-mmlu_llama}"
+    TASKS="${TASKS:-mmlu_llama}"; NUM_FEWSHOT=5
     MODE_ARGS=(--apply_chat_template --fewshot_as_multiturn)
     ;;
   standard)
-    TASKS="${TASKS:-mmlu}"
+    TASKS="${TASKS:-mmlu}"; NUM_FEWSHOT=5
     MODE_ARGS=()
     ;;
-  *) echo "Unknown mode '$MODE' (use llama|standard)"; exit 1 ;;
+  gsm8k)
+    TASKS="${TASKS:-gsm8k_llama}"; NUM_FEWSHOT=8
+    MODE_ARGS=(--apply_chat_template --fewshot_as_multiturn)
+    ;;
+  math)
+    TASKS="${TASKS:-leaderboard_math_hard}"; NUM_FEWSHOT=4
+    MODE_ARGS=()
+    ;;
+  gpqa)
+    TASKS="${TASKS:-leaderboard_gpqa_main}"; NUM_FEWSHOT=0
+    MODE_ARGS=()
+    ;;
+  humaneval)
+    TASKS="${TASKS:-humaneval_instruct}"; NUM_FEWSHOT=0
+    # Executes the model's generated code locally to check it against the tests.
+    # Two separate libraries gate this, so both opt-ins are needed: lm-eval's own
+    # --confirm_run_unsafe_code, and HF `evaluate`'s code_eval metric, which refuses
+    # to run at all without HF_ALLOW_CODE_EVAL=1.
+    MODE_ARGS=(--confirm_run_unsafe_code)
+    export HF_ALLOW_CODE_EVAL=1
+    ;;
+  *) echo "Unknown mode '$MODE' (use llama|standard|gsm8k|math|gpqa|humaneval)"; exit 1 ;;
 esac
 
 case "$BACKEND" in
@@ -87,7 +129,7 @@ set -x
   --model "$BACKEND" \
   --model_args "$MODEL_ARGS" \
   --tasks "$TASKS" \
-  --num_fewshot 5 \
+  --num_fewshot "$NUM_FEWSHOT" \
   --device "$DEVICE" \
   --batch_size "$BATCH_SIZE" \
   --seed 1234 \

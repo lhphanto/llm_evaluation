@@ -108,3 +108,32 @@ and flags partial runs (`--limit` or a subset of subjects) as not comparable to 
   follow the format less reliably, such as heavily quantized fine-tunes.
 - The chat template comes from the model's tokenizer. The Llama 3 template inserts no
   system prompt by default; `--system_instruction "..."` adds one.
+
+## Results
+
+### HF1BitLLM/Llama3-8B-1.58-100B-tokens
+
+1.58-bit (ternary) BitNet fine-tune of Llama 3 8B. Full 57-subject runs, HF backend, bfloat16.
+
+| Mode | macro | micro | vs. card (macro 68.4) |
+|---|---|---|---|
+| `llama` | 28.75 | 29.22 | -39.65 |
+| `standard` | 35.99 | 35.07 | -32.41 |
+
+Category breakdown (micro):
+
+| Mode | stem | humanities | social_sciences | other |
+|---|---|---|---|---|
+| `llama` | 29.69 | 26.82 | 32.27 | 29.35 |
+| `standard` | 33.11 | 32.07 | 38.64 | 38.08 |
+
+Both modes land far below the Llama 3 8B Instruct card, and not far above the 25%
+random-guess baseline for 4-choice questions. `llama` mode scores lower than `standard`
+here, the opposite of the usual pattern (see "Notes on matching the card" above) —
+likely this quantized model follows the "The best answer is [X]" generation format
+less reliably than it picks among A/B/C/D by loglikelihood, so it's worth checking the
+`samples_mmlu_llama_*.jsonl` files for `exact_match` failures before trusting the gap.
+
+Results files:
+- `results/llama/HF1BitLLM__Llama3-8B-1.58-100B-tokens/results_2026-09-18T10-58-16.525698.json`
+- `results/standard/HF1BitLLM__Llama3-8B-1.58-100B-tokens/results_2026-09-18T11-44-42.654947.json`

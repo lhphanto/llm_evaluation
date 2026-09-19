@@ -7,8 +7,64 @@ Reproducing published benchmark results with
 
 | Benchmark | Setting | Doc | Script |
 |---|---|---|---|
-| MMLU | 5-shot | [mmlu.md](mmlu.md) | `run_mmlu.sh` |
-| GPQA | 0-shot | planned | |
+| MMLU | 5-shot | [mmlu.md](mmlu.md) | `./run_mmlu.sh llama\|standard` |
+| GSM8K | 8-shot, CoT | [gsm8k.md](gsm8k.md) | `./run_mmlu.sh gsm8k` |
+| MATH | 4-shot, CoT | [math.md](math.md) | `./run_mmlu.sh math` |
+| GPQA | 0-shot | [gpqa.md](gpqa.md) | `./run_mmlu.sh gpqa` |
+| HumanEval | 0-shot | [humaneval.md](humaneval.md) | `./run_mmlu.sh humaneval` |
+
+## Results: HF1BitLLM/Llama3-8B-1.58-100B-tokens
+
+1.58-bit (ternary) BitNet fine-tune of Llama-3-8B-Instruct, continued-pretrained on
+100B tokens of a FineWeb-edu subset (see [BitNet model notes](#bitnet-model-notes)).
+Full test sets throughout; per-benchmark detail (raw generations, failure-mode
+analysis, results file paths) is in the linked doc.
+
+| Benchmark | Setting | Ours | Card | Diff | Doc |
+|---|---|---|---|---|---|
+| MMLU | 5-shot, `standard` | 35.99 (macro) | 68.40 | -32.41 | [mmlu.md](mmlu.md) |
+| MMLU | 5-shot, `llama` | 28.75 (macro) | 68.40 | -39.65 | [mmlu.md](mmlu.md) |
+| GSM8K | 8-shot, CoT | 1.74 | 79.60 | -77.86 | [gsm8k.md](gsm8k.md) |
+| MATH | 4-shot, CoT | 1.13 | 30.00 | -28.87 | [math.md](math.md) |
+| GPQA | 0-shot | 24.78 | 34.20 | -9.42 | [gpqa.md](gpqa.md) |
+| HumanEval | 0-shot, pass@1 | 0.00 | 62.20 | -62.20 | [humaneval.md](humaneval.md) |
+
+## Known issues with the 1.58-bit checkpoint
+
+Investigating why the scores above are so far below the card surfaced several
+distinct, confirmed problems, not just "quantization makes it worse" — each is
+detailed with sample generations in its benchmark's doc:
+
+- **Lost instruction-following, not just lost knowledge.** The base model is
+  Llama-3-8B-**Instruct**, but the continued pretraining was on 100B tokens of plain
+  FineWeb-edu text (no chat-formatted data). That plausibly eroded chat-template/
+  instruction-following behavior on top of the raw precision loss from ternary
+  weights. It shows up concretely as: MMLU's `llama` mode (which depends on the model
+  reliably following "The best answer is [X]") scoring *lower* than `standard` mode
+  (loglikelihood ranking, format-insensitive) — the reverse of the usual pattern — and
+  HumanEval, where the model never once attempts to write code (see below).
+- **GSM8K: runaway generation.** `gsm8k_llama` sets no stop sequence, relying on the
+  model's own end-of-turn token. In 80.9% of responses this model doesn't stop after
+  answering — it hallucinates a new, unrelated question and answers that instead,
+  which the scoring regex (last-match) grades in place of the real answer. Re-scoring
+  on the first answer instead of the last only recovers ~1.6 points, so this explains
+  a small slice of the gap, not most of it. See [gsm8k.md](gsm8k.md).
+- **MATH: degenerate repetition loops.** ~80% of responses get stuck repeating the
+  same line verbatim until the token budget runs out, and 0 of 1,324 responses ever
+  produce a `\boxed{}` answer at all. See [math.md](math.md).
+- **HumanEval: the model never attempts the task.** 100% of extracted completions are
+  byte-identical to the bare prompt (no function body added, 0% contain `return`);
+  instead of code, generation is repetitive chat-style filler like "The function has
+  passed the tests." See [humaneval.md](humaneval.md).
+- **GPQA is a poor discriminator here.** Scored by loglikelihood (not generation), so
+  none of the above pathologies apply — but both this model (24.78%) and the
+  full-precision card (34.2%) sit close to the 25% random-guess floor for 4-choice
+  questions, so it doesn't show much regardless of quantization. See [gpqa.md](gpqa.md).
+
+Net read: MMLU, GSM8K, and MATH all point to severe capability loss from 1.58-bit
+quantization + only 100B tokens of (non-chat) recovery training, rather than the
+FineWeb-edu domain choice being the main cause — GSM8K in particular only needs simple
+arithmetic, which should be largely domain-agnostic, and still collapses to ~3%.
 
 ## Models
 
@@ -23,8 +79,8 @@ Pick the model with `MODEL=<hf id or local path>`.
 
 | File | Purpose |
 |---|---|
-| `run_mmlu.sh` | MMLU 5-shot runner (see [mmlu.md](mmlu.md)) |
-| `summarize.py` | Reads an MMLU results JSON and prints macro/micro accuracy plus the diff from the model card |
+| `run_mmlu.sh` | Runner for all benchmarks below (see [mmlu.md](mmlu.md), [gsm8k.md](gsm8k.md), [math.md](math.md), [gpqa.md](gpqa.md), [humaneval.md](humaneval.md)) |
+| `summarize.py` | Reads a results JSON and prints its score(s) plus the diff from the model card (macro/micro + category breakdown for MMLU, a single score for the others) |
 | `requirements.txt` | Pinned Python dependencies |
 
 ## Setup (on the evaluation machine)
@@ -45,7 +101,7 @@ Tested with Python 3.12, `lm_eval==0.4.13`, `transformers==5.17.0`, `torch==2.14
 cd llm_evaluation
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt       # lm_eval[hf]==0.4.13 (pulls torch + transformers)
+.venv/bin/pip install -r requirements.txt       # lm_eval[hf,math]==0.4.13 (pulls torch + transformers)
 ```
 
 If the default torch wheel doesn't match your CUDA driver, install the matching one
@@ -53,11 +109,11 @@ first from [pytorch.org](https://pytorch.org/get-started/locally/), then run the
 
 **vLLM (optional, recommended on CUDA).** It is much faster for generative tasks, but
 it is not in `requirements.txt` because it only installs on Linux + CUDA. `BACKEND=vllm`
-fails unless it is installed in the same environment. Install both extras in one
+fails unless it is installed in the same environment. Install all extras in one
 command, so pip picks `torch`/`transformers` versions that satisfy lm-eval and vLLM together:
 
 ```bash
-.venv/bin/pip install "lm_eval[hf,vllm]==0.4.13"
+.venv/bin/pip install "lm_eval[hf,vllm,math]==0.4.13"
 .venv/bin/python -c "import vllm; print(vllm.__version__)"    # check
 ```
 
@@ -99,7 +155,7 @@ The run scripts take these environment variables:
 | `BACKEND` | `hf` | `hf` or `vllm` |
 | `DEVICE` | auto (`cuda:0` → `mps` → `cpu`); `cuda:0` when `LAUNCHER` is set | |
 | `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | also `auto:N`, or a fixed number if you hit OOM |
-| `OUT_DIR` | `results` | results go to `$OUT_DIR/<mode>/<model>/results_<timestamp>.json` |
+| `OUT_DIR` | `results` | results go to `$OUT_DIR/<benchmark>/<model>/results_<timestamp>.json` |
 | `TASKS` | per benchmark | override the lm-eval task list, e.g. a single subject |
 | `PYTHON` | see [Python environment](#2-python-environment) | interpreter to use |
 | `LAUNCHER` | none | job-submit prefix, e.g. `vbatch -P h100-1s` (see [Velda](#running-on-velda)) |
@@ -108,6 +164,10 @@ Extra arguments are passed through to `lm_eval run`, e.g. `--limit 5` or
 `--max_batch_size 64`. Full runs also save per-question outputs (`--log_samples`),
 which helps debug wrong answers. lm-eval can't log samples together with `--limit`,
 so limited runs skip them.
+
+**`./run_mmlu.sh humaneval` executes the model's generated code** on the evaluation
+machine to check it against the tests (that's what `--confirm_run_unsafe_code` opts
+into). Only run it against models you trust, ideally in a sandbox/VM.
 
 ## Running on Velda
 
@@ -161,6 +221,7 @@ The summary is printed at the end of the job log, and `.venv/bin/python summariz
 ```bash
 MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens ./run_mmlu.sh llama
 MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens BATCH_SIZE=auto:4 ./run_mmlu.sh standard
+MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens ./run_mmlu.sh gsm8k
 ```
 
 ## Smoke test (any machine, a few minutes)

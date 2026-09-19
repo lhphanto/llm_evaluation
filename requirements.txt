@@ -1,7 +1,9 @@
 # Core: lm-evaluation-harness with the HF transformers backend.
 # 0.4.13 is the version these scripts were written and smoke-tested against;
 # it ships the `mmlu_llama` task (lm_eval/tasks/llama3/instruct/mmlu).
-lm_eval[hf]==0.4.13
+# `math` extra (math-verify, sympy, antlr4-python3-runtime) is needed for
+# `./run_mmlu.sh math` (leaderboard_math_hard) to grade \boxed{} answers.
+lm_eval[hf,math]==0.4.13
 
 # Optional, much faster for the generative `mmlu_llama` task on CUDA:
 #   pip install "lm_eval[vllm]==0.4.13"
