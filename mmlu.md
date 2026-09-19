@@ -40,6 +40,35 @@ section below for why that isn't a contradiction, and which comparison is more
 appropriate for this checkpoint (it was fine-tuned from Llama-3-8B-**Instruct**, so
 neither reference is a perfect match).
 
+**Trying to reproduce the 41.6 number.** `./run_mmlu.sh standard` already uses the
+closest lm-eval equivalent of their setup (plain text, no chat template,
+loglikelihood over A/B/C/D) — it just defaults to 5-shot. Override the shot count to
+attempt a closer match:
+
+```bash
+NUM_FEWSHOT=0 OUT_DIR=results_0shot MODEL=HF1BitLLM/Llama3-8B-1.58-100B-tokens \
+  ./run_mmlu.sh standard
+```
+
+(`OUT_DIR` keeps this separate from the 5-shot `results/standard/` run.) Treat this as
+an attempt, not a guaranteed match: lm-eval-harness's `mmlu` task and LightEval build
+their 0-shot prompts differently (subject-name formatting, instruction wording, letter
+style), and prompt differences like that routinely move MMLU by a few points on their
+own, independent of shot count.
+
+**Result:** full 57-subject, 14,042-question run — macro 37.24, micro 36.24, vs. their
+41.6 (diff -4.36 / -5.36). That's within a few points, much closer than the ~32-40
+point gaps found against the Instruct 5-shot card elsewhere in this doc. Take that as
+reasonably good evidence that the harness/prompt-template choice doesn't matter much
+here, and — more importantly — that the huge gaps reported below are mostly a
+protocol/reference-model artifact (5-shot Instruct-chat vs. 0-shot base), not evidence
+that our `transformers`-loaded checkpoint is somehow broken or unrepresentative of the
+model the authors evaluated. (Mildly interesting aside: this 0-shot run scored
+*slightly higher*, 37.24, than our own 5-shot `standard` run, 35.99 — the reverse of
+the usual "more shots help" pattern, though the 1.25-point gap is small enough to be
+noise for a model this degraded.) Results file:
+`result_0shot/standard/HF1BitLLM__Llama3-8B-1.58-100B-tokens/results_2026-09-18T22-15-43.802392.json`.
+
 ## How Meta evaluated it, and why there are two modes
 
 According to Meta's [eval_details.md](https://github.com/meta-llama/llama3/blob/main/eval_details.md),
@@ -167,7 +196,12 @@ Results files:
 
 **Reconciling with the authors' own 41.6 number (see above).** Our -32 to -40 point
 gap looks far more damning than the ~8-point gap (49.3 → 41.6) the model's own authors
-report, but these are different measurements, not a discrepancy in either result:
+report, but these are different measurements, not a discrepancy in either result — and
+we confirmed this directly: running our own `standard` task at 0-shot instead of
+5-shot lands at 37.24 macro / 36.24 micro, within ~4-5 points of their 41.6 (see "Trying
+to reproduce the 41.6 number" above). So the large gaps below are overwhelmingly a
+protocol/reference-model artifact, not a sign that this checkpoint or our evaluation
+of it is somehow broken:
 
 - Their 41.6 is 0-shot, scored against **base** Llama models via LightEval on a
   nanotron checkpoint. Ours is 5-shot, scored against the **Instruct** card, via

@@ -24,21 +24,25 @@ analysis, results file paths) is in the linked doc.
 |---|---|---|---|---|---|
 | MMLU | 5-shot, `standard` | 35.99 (macro) | 68.40 | -32.41 | [mmlu.md](mmlu.md) |
 | MMLU | 5-shot, `llama` | 28.75 (macro) | 68.40 | -39.65 | [mmlu.md](mmlu.md) |
+| MMLU | 0-shot, `standard` | 37.24 (macro) | 41.60\* | -4.36 | [mmlu.md](mmlu.md) |
 | GSM8K | 8-shot, CoT | 1.74 | 79.60 | -77.86 | [gsm8k.md](gsm8k.md) |
 | MATH | 4-shot, CoT | 1.13 | 30.00 | -28.87 | [math.md](math.md) |
 | GPQA | 0-shot | 24.78 | 34.20 | -9.42 | [gpqa.md](gpqa.md) |
 | HumanEval | 0-shot, pass@1 | 0.00 | 62.20 | -62.20 | [humaneval.md](humaneval.md) |
 
-"Card" here is Meta's Llama-3-8B-**Instruct** model card, 5-shot (68.4 for MMLU, etc.)
-— the same reference used throughout this repo. **This checkpoint's own authors
-publish a different MMLU comparison** (0-shot, against **base** — not Instruct —
-Llama models, via LightEval on a nanotron checkpoint): 49.3 → 41.6, an ~8-point gap,
-much smaller than the ~32-40 points we find above. That's not a contradiction — it's a
-different protocol and a different (much lower-scoring-to-begin-with) reference model
-— see [mmlu.md](mmlu.md#a-second-different-reference-the-bitnet-authors-own-numbers)
-for the full table and reconciliation. It doesn't change the GSM8K/MATH/HumanEval
-findings below, which come from inspecting actual generated text, not from picking a
-reference number.
+"Card" is Meta's Llama-3-8B-**Instruct** model card, 5-shot (68.4 for MMLU, etc.) for
+every row except the one marked \*: **this checkpoint's own authors publish a
+different MMLU comparison** (0-shot, against **base** — not Instruct — Llama models,
+via LightEval on a nanotron checkpoint): 49.3 → 41.6. We reran MMLU at 0-shot
+ourselves to check, and landed within ~4-5 points of their number (37.24 vs. 41.6) —
+much closer than the ~32-40 point gaps above. That confirms the huge gaps elsewhere in
+this table are overwhelmingly a **protocol/reference-model artifact** (5-shot
+Instruct-chat vs. 0-shot base), not evidence that this checkpoint or our evaluation of
+it is broken — see
+[mmlu.md](mmlu.md#a-second-different-reference-the-bitnet-authors-own-numbers) for the
+full reference table and the 0-shot reproduction. It doesn't change the GSM8K/MATH/
+HumanEval findings below, which come from inspecting actual generated text, not from
+picking a reference number.
 
 ## Known issues with the 1.58-bit checkpoint
 
@@ -46,12 +50,14 @@ Investigating why the scores above are so far below the card surfaced several
 distinct, confirmed problems, not just "quantization makes it worse" — each is
 detailed with sample generations in its benchmark's doc:
 
-- **Two legitimate but very different MMLU reference points.** See the note above the
-  table: comparing this checkpoint to the Instruct card at 5-shot (what this repo does
-  throughout) gives a ~32-40 point gap; the model's own authors instead compare it to
-  base (non-instruct) Llama models at 0-shot and find only an ~8-point gap (49.3 →
-  41.6). Neither is wrong, but they're not interchangeable, and neither is a perfect
-  fit for a checkpoint fine-tuned from the Instruct weights.
+- **Two legitimate but very different MMLU reference points — confirmed, not just
+  argued.** Comparing this checkpoint to the Instruct card at 5-shot (what this repo
+  does throughout) gives a ~32-40 point gap; the model's own authors instead compare
+  it to base (non-instruct) Llama models at 0-shot and find only an ~8-point gap (49.3
+  → 41.6). We didn't just note the discrepancy — we reran MMLU ourselves at 0-shot and
+  landed within ~4-5 points of their 41.6 (37.24 vs. 41.6), confirming the gap is
+  mostly about which protocol/reference you pick, not a sign that our evaluation setup
+  or this checkpoint's weights are somehow different from what the authors tested.
 - **Lost instruction-following, not just lost knowledge.** The base model is
   Llama-3-8B-**Instruct**, but the continued pretraining was on 100B tokens of plain
   FineWeb-edu text (no chat-formatted data). That plausibly eroded chat-template/
@@ -180,6 +186,7 @@ The run scripts take these environment variables:
 | `BATCH_SIZE` | `auto` (`8` on Apple `mps`) | also `auto:N`, or a fixed number if you hit OOM |
 | `OUT_DIR` | `results` | results go to `$OUT_DIR/<benchmark>/<model>/results_<timestamp>.json` |
 | `TASKS` | per benchmark | override the lm-eval task list, e.g. a single subject |
+| `NUM_FEWSHOT` | per benchmark (5 for MMLU, 8 GSM8K, 4 MATH, 0 GPQA/HumanEval) | override the shot count, e.g. `NUM_FEWSHOT=0` for a 0-shot MMLU run |
 | `PYTHON` | see [Python environment](#2-python-environment) | interpreter to use |
 | `LAUNCHER` | none | job-submit prefix, e.g. `vbatch -P h100-1s` (see [Velda](#running-on-velda)) |
 

@@ -81,27 +81,27 @@ if [ "$DEVICE" = "mps" ]; then BATCH_SIZE="${BATCH_SIZE:-8}"; else BATCH_SIZE="$
 
 case "$MODE" in
   llama)
-    TASKS="${TASKS:-mmlu_llama}"; NUM_FEWSHOT=5
+    TASKS="${TASKS:-mmlu_llama}"; NUM_FEWSHOT="${NUM_FEWSHOT:-5}"
     MODE_ARGS=(--apply_chat_template --fewshot_as_multiturn)
     ;;
   standard)
-    TASKS="${TASKS:-mmlu}"; NUM_FEWSHOT=5
+    TASKS="${TASKS:-mmlu}"; NUM_FEWSHOT="${NUM_FEWSHOT:-5}"
     MODE_ARGS=()
     ;;
   gsm8k)
-    TASKS="${TASKS:-gsm8k_llama}"; NUM_FEWSHOT=8
+    TASKS="${TASKS:-gsm8k_llama}"; NUM_FEWSHOT="${NUM_FEWSHOT:-8}"
     MODE_ARGS=(--apply_chat_template --fewshot_as_multiturn)
     ;;
   math)
-    TASKS="${TASKS:-leaderboard_math_hard}"; NUM_FEWSHOT=4
+    TASKS="${TASKS:-leaderboard_math_hard}"; NUM_FEWSHOT="${NUM_FEWSHOT:-4}"
     MODE_ARGS=()
     ;;
   gpqa)
-    TASKS="${TASKS:-leaderboard_gpqa_main}"; NUM_FEWSHOT=0
+    TASKS="${TASKS:-leaderboard_gpqa_main}"; NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
     MODE_ARGS=()
     ;;
   humaneval)
-    TASKS="${TASKS:-humaneval_instruct}"; NUM_FEWSHOT=0
+    TASKS="${TASKS:-humaneval_instruct}"; NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
     # Executes the model's generated code locally to check it against the tests.
     # Two separate libraries gate this, so both opt-ins are needed: lm-eval's own
     # --confirm_run_unsafe_code, and HF `evaluate`'s code_eval metric, which refuses
